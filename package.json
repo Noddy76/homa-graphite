@@ -1,0 +1,10 @@
+{
+  "name": "homa-graphite",
+  "version" : "0.1.0",
+  "private":"true",
+  "dependencies" : {
+    "homa" : ">=0.2.0",
+    "lynx" : ">=0.2.0"
+  }
+}
+
