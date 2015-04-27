@@ -1,18 +1,28 @@
 #!/usr/bin/env node
 var homa = require('homa');
-var lynx = require('lynx');
+var devNull = require('dev-null');
+var net = require('net');
+
+var log = require('./logger.js');
 
 var systemId = homa.paramsWithDefaultSystemId("homa-graphite");
 
-var metrics;
+var host;
+var port;
+
+var buffer = [];
 
 (function connect() {
+  homa.logger.stream = devNull();
+  homa.logger.on('log', function(msg) {
+    log[msg.level](msg.prefix + " - " + msg.message);
+  });
   homa.mqttHelper.connect();
 })();
 
 homa.mqttHelper.on('connect', function(packet) {    
-  homa.settings.require('statsd_host');
-  homa.settings.require('statsd_port');
+  homa.settings.require('graphite_host');
+  homa.settings.require('graphite_port');
 
   homa.mqttHelper.subscribe("/devices/#");
 });
@@ -22,13 +32,12 @@ homa.mqttHelper.on('message', function(packet) {
   
   if (!homa.settings.isLocked() && homa.settings.isBootstrapCompleted()) {
     homa.settings.lock();
-    var host = homa.settings.get("statsd_host");
-    var port = homa.settings.get("statsd_port");
-    console.log("Sending metrics to StatsD at %s:%s", host, port);
-    metrics = new lynx(host, port);
+    host = homa.settings.get("graphite_host").toString();
+    port = parseInt(homa.settings.get("graphite_port").toString());
+    log.info("Sending metrics to Graphite at %s:%s", host, port);
   }
 
-  if (typeof metrics == 'undefined') {
+  if (typeof host == 'undefined' || typeof port == 'undefined') {
     return;
   }
 
@@ -37,9 +46,38 @@ homa.mqttHelper.on('message', function(packet) {
   if (match = /^\/devices\/([^\/]+)\/controls\/([^\/]+)$/.exec(packet.topic)) {
     var value = parseFloat(packet.payload);
     if (!isNaN(value)) {
-      console.log("homa." + match[1] + "." + match[2] + "\t" + packet.payload);
-      metrics.gauge("homa." + match[1] + "." + match[2], packet.payload);
+      var metric = "homa." + match[1] + "." + match[2];
+      var value = packet.payload.toString();
+      var timestamp = Math.floor(Date.now() / 1000);
+
+      var record = [metric, value, timestamp].join(' ');
+      buffer.push(record);
     }
   }
 });
 
+function sendBuffer() {
+  (function() {
+    if (buffer.length < 1) {
+      return;
+    }
+
+    var records = buffer;
+    buffer = [];
+    
+    var client = new net.Socket();
+    client.connect(port, host, function() {
+      for (var i = 0; i < records.length; i++) {
+        client.write(records[i] + "\n");
+      }
+      client.end();
+      log.debug("Sent %d records to graphite", records.length);
+    });
+  })();
+
+  var timeToNextRun = 10000 - (Date.now() % 10000);
+  if (timeToNextRun < 100) timeToNextRun += 10000;
+  setTimeout(sendBuffer, timeToNextRun);
+}
+
+sendBuffer();
