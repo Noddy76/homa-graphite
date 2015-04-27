@@ -1,0 +1,12 @@
+[Unit]
+Description=Homa Graphite Reporter
+
+[Service]
+User=homa
+EnvironmentFile=/home/homa/environment.config
+ExecStart=/usr/local/bin/node /home/homa/homa-graphite/homa-graphite.js --brokerHost $BROKER
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+
