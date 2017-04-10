@@ -8,4 +8,4 @@ RUN npm install && npm cache clean
 COPY logger.js /app
 COPY homa-graphite.js /app
 
-ENTRYPOINT [ "node", "--max-old-space-size=4", "homa-graphite.js" ]
+ENTRYPOINT [ "node", "--max-old-space-size=16", "homa-graphite.js" ]
